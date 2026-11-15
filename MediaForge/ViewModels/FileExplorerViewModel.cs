@@ -145,6 +145,7 @@ public partial class FileExplorerViewModel : ObservableObject
 
     private void ApplyView(bool incremental = false)
     {
+        RefreshMetadataFilterOptions();
         var selectedPaths = SelectedItems.Select(i => i.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var filtered = _allItems.Where(i => (ShowHidden || !i.IsHidden)
             && i.Name.Contains(SearchText.Trim(), StringComparison.CurrentCultureIgnoreCase)

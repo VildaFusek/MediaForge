@@ -22,7 +22,8 @@ public sealed class HardwareDetectionService
                 foreach (string name in video?.GetSubKeyNames() ?? [])
                 {
                     using var adapter = video!.OpenSubKey(name);
-                    if (adapter?.GetValue("DriverDesc") is string description) gpus.Add(description);
+                    if (adapter?.GetValue("DriverDesc") is string description)
+                        gpus.Add($"{description} • ovladač {adapter.GetValue("DriverVersion")} ({adapter.GetValue("DriverDate")})");
                 }
             }
             catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
@@ -72,7 +73,7 @@ public sealed class HardwareDetectionService
                 + $"\nRAM: {memory.TotalGiB:F1} GiB\nGrafické adaptéry (registr): {string.Join(", ", gpus)}"
                 + "\nAkcelerace byla zkoušena krátkým kódováním, nikoli jen seznamem enkodérů."
                 + "\nTest enkodérů negarantuje podporu každého rozlišení ani GPU dekódování."
-                + "\nGPU dekodér lze vybrat v kartě Akcelerace; ověří se na začátku každé úlohy na konkrétním vstupu.",
+                + "\nAutomatické učení porovná cesty na konkrétním vstupu při spuštění převodu; samotný test dostupnosti neurčuje rychlost.",
                 encoders, log.ToString());
         }, token);
 }

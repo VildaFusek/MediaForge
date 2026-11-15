@@ -126,7 +126,7 @@ public partial class FileExplorerViewModel
             var byPath = cached.ToDictionary(item => item.FilePath, StringComparer.OrdinalIgnoreCase);
             foreach (var item in snapshot)
                 item.Analysis = byPath.GetValueOrDefault(item.FullPath);
-            if (HasMetadataFilters) ApplyView(incremental: true);
+            ApplyView(incremental: true);
             OnPropertyChanged(nameof(DetailsText));
             var inputs = snapshot.Where(item => !item.IsAnalyzed).Select(item => item.FullPath).ToArray();
             var installation = FfmpegService.Instance.Current;

@@ -4,38 +4,39 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:MediaForge.Controls">
-    <Grid x:Name="Surface" Padding="20" RowSpacing="12">
+    <Grid x:Name="Surface" Padding="16" RowSpacing="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <StackPanel Spacing="4">
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <controls:RepoIcon Data="{StaticResource RepoVideo}" Width="30" Height="30"
                                   Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
-                <TextBlock Text="Převést videa" Style="{ThemeResource TitleTextBlockStyle}"/>
+                <TextBlock Text="Nastavení a fronta převodů" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap"/>
             </StackPanel>
             <TextBlock Text="{Binding NextStep}" TextWrapping="Wrap"/>
         </StackPanel>
 
-        <Border Grid.Row="1" Padding="16" CornerRadius="8" BorderThickness="1"
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="12" Padding="0,0,12,12">
+        <Border Padding="16" CornerRadius="8" BorderThickness="1"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" Background="{ThemeResource LayerFillColorDefaultBrush}">
-            <Grid ColumnSpacing="20">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/><ColumnDefinition Width="1.5*"/><ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+            <Grid RowSpacing="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <StackPanel Spacing="8">
-                    <TextBlock Text="1. Vyberte videa" FontWeight="SemiBold"/>
+                    <TextBlock Text="1. Přidejte videa do fronty" FontWeight="SemiBold"/>
                     <Button Click="AddFiles_Click" HorizontalAlignment="Stretch" AutomationProperties.Name="Přidat videa">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <controls:RepoIcon Data="{StaticResource RepoFolderAdd}"/>
                             <TextBlock Text="Přidat videa…" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <TextBlock Text="Rovnou se zařadí do fronty. Lze vybrat více souborů najednou."
+                    <TextBlock Text="Použijte „Do fronty převodů“ v seznamu souborů nebo vyberte další videa zde."
                                TextWrapping="Wrap" Opacity="0.7" FontSize="12"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="8">
+                <StackPanel Grid.Row="1" Spacing="8">
                     <TextBlock Text="2. Pro jaké zařízení?" FontWeight="SemiBold"/>
                     <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
                               IsEnabled="{Binding CanEditSettings}" HorizontalAlignment="Stretch"
@@ -45,7 +46,22 @@
                               IsEnabled="{Binding CanEditSettings}" HorizontalAlignment="Stretch"/>
                     <TextBlock Text="{Binding SettingsScopeDescription}" TextWrapping="Wrap" FontSize="12" MaxLines="2"/>
                 </StackPanel>
-                <StackPanel Grid.Column="2" Spacing="8">
+                <StackPanel Grid.Row="2" Spacing="8">
+                    <TextBlock Text="Výkon počítače a rychlost" FontWeight="SemiBold"/>
+                    <CheckBox IsChecked="{Binding AdaptiveHardware, Mode=TwoWay}" IsEnabled="{Binding CanEditSettings}">
+                        <TextBlock Text="Učit se výkon tohoto PC a automaticky doporučovat CPU / GPU" TextWrapping="Wrap"/>
+                    </CheckBox>
+                    <TextBlock Text="{Binding HardwareRecommendation}" TextWrapping="Wrap" FontSize="12"/>
+                    <TextBlock Text="Platí pro automatický výběr enkodéru nebo dekodéru; ruční volby se nepřepisují. První porovnání krátce zatíží i CPU. Posuzuje rychlost a CPU čas, nikoli elektřinu nebo kvalitu obrazu. Výsledky pro podobné vstupy jsou orientační."
+                               TextWrapping="Wrap" FontSize="12" Opacity="0.7"/>
+                    <ComboBox Header="Zatížení počítače" ItemsSource="{Binding WorkloadOptions}"
+                              SelectedItem="{Binding SelectedWorkload, Mode=TwoWay}"
+                              IsEnabled="{Binding CanEditSettings}" HorizontalAlignment="Stretch"/>
+                    <ComboBox Header="Rychlost enkódování" ItemsSource="{Binding EncodingSpeedOptions}"
+                              SelectedItem="{Binding SelectedEncodingSpeed, Mode=TwoWay}"
+                              IsEnabled="{Binding CanEditSettings}" HorizontalAlignment="Stretch"/>
+                    <TextBlock Text="Úsporné: přibližně čtvrtina CPU vláken na fázi a nízká priorita. Vyvážené: polovina a snížená priorita. Maximální: všechna a běžná priorita. Nejde o pevný limit vytížení; GPU se procentuálně neomezuje. Rychlejší enkódování může při stejném datovém toku snížit kvalitu. Změny platí pro čekající videa, ne pro právě běžící převod."
+                               TextWrapping="Wrap" FontSize="12" Opacity="0.7"/>
                     <TextBlock Text="3. Spusťte převod" FontWeight="SemiBold"/>
                     <Button x:Name="StartConversionButton" Command="{Binding StartCommand}" HorizontalAlignment="Stretch"
                             Style="{ThemeResource AccentButtonStyle}" AutomationProperties.Name="Spustit převod">
@@ -60,8 +76,6 @@
             </Grid>
         </Border>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="12" Padding="0,0,12,12">
                 <InfoBar IsOpen="{Binding HasSettingsError}" IsClosable="False" Severity="Warning"
                          Title="Upravte nastavení" Message="{Binding SettingsError}"/>
                 <StackPanel Spacing="6">
@@ -168,11 +182,11 @@
                         <ComboBox Header="Enkódování" ItemsSource="{Binding Encoders}" SelectedItem="{Binding SelectedEncoder, Mode=OneWay}"
                                   SelectionChanged="Encoder_SelectionChanged"
                                   IsEnabled="{Binding CanEditSettings}" HorizontalAlignment="Stretch"/>
-                        <TextBlock Text="Automatický enkodér preferuje ověřenou GPU. CPU dekódování je výchozí; GPU dekodér se ověří na konkrétním vstupu. Filtry zůstávají na CPU a GPU cesta se při chybě skrytě nepřepíná."
+                        <TextBlock Text="Automatické učení upřednostní GPU, pokud je naměřená cesta výrazně rychlejší nebo při podobné rychlosti spotřebuje méně CPU času. Bez učení automatický enkodér preferuje ověřenou GPU a automatický dekodér používá CPU. Filtry zůstávají na CPU; běžící GPU převod se při chybě skrytě nepřepíná."
                                    TextWrapping="Wrap" Opacity="0.7"/>
-                        <TextBlock Text="Výstup: MP4, jedna video a jedna zvuková stopa (AAC stereo), bez titulků. HDR → SDR používá tone mapping do BT.709. Zachování HDR10/HLG vyžaduje HEVC profil a automatický nebo CPU libx265 enkodér; HDR výstup má 10 bitů. SDR vstup se na HDR nemění. Dolby Vision ani zachování HDR10+ nejsou podporované. Rozlišení se nezvětšuje; kompatibilita konkrétního zařízení není zaručena."
+                        <TextBlock Text="Výstup: MP4, jedna video a jedna zvuková stopa (AAC stereo), bez titulků. HDR → SDR používá tone mapping do BT.709. Zachování HDR10/HLG vyžaduje HEVC profil a automatický nebo CPU libx265 enkodér; HDR výstup má 10 bitů. SDR vstup se na HDR nemění. Dolby Vision profily 7 a 8.1 lze převést do SDR nebo HDR10 pouze z HDR10 kompatibilní základní vrstvy; dynamická metadata a rozšiřující vrstva (včetně FEL) se zahodí. Profil 5, ostatní profily Dolby Vision a zachování HDR10+ nejsou podporované. Rozlišení se nezvětšuje; kompatibilita konkrétního zařízení není zaručena."
                                    TextWrapping="Wrap" Opacity="0.7"/>
-                        <TextBlock Text="HDR metadata se kontrolují v hlavičce a úvodních 64 video paketech; případné pozdější dynamické změny se neověřují. HDR → SDR vyžaduje FFmpeg s filtry zscale a tonemap."
+                        <TextBlock Text="HDR metadata se kontrolují v hlavičce a úvodních 64 video paketech; případné pozdější dynamické změny se neověřují. HDR → SDR vyžaduje FFmpeg s filtry zscale a tonemap; Dolby Vision také sidedata s podporou DOVI_RPU_BUFFER a DOVI_METADATA. Pro HDR10 výstup jsou nutná mastering metadata vstupu; chybějící údaje se neodhadují."
                                    TextWrapping="Wrap" FontSize="12" Opacity="0.7"/>
                         <Expander Header="Vybavení počítače a ověření enkodérů" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <StackPanel Spacing="8">
@@ -200,6 +214,6 @@
                 </Expander>
             </StackPanel>
         </ScrollViewer>
-        <TextBlock Grid.Row="3" Text="{Binding Message}" TextWrapping="Wrap" MaxLines="3" IsTextSelectionEnabled="True"/>
+        <TextBlock Grid.Row="2" Text="{Binding Message}" TextWrapping="Wrap" MaxLines="3" IsTextSelectionEnabled="True"/>
     </Grid>
 </UserControl>

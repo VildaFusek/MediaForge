@@ -13,10 +13,17 @@ public sealed class VideoConversionService
 
     public Task ConvertAsync(ConversionJob job, FfmpegInstallation installation,
         IProgress<ConversionUpdate> progress, CancellationToken token) =>
-        Task.Run(() => ConvertCoreAsync(job, installation, progress, token), token);
+        ConvertAsync(job, installation, progress, token, null, false, "");
+
+    public Task ConvertAsync(ConversionJob job, FfmpegInstallation installation,
+        IProgress<ConversionUpdate> progress, CancellationToken token,
+        IReadOnlyList<EncoderOption>? automaticEncoders, bool automaticDecoder, string hardwareIdentity) =>
+        Task.Run(() => ConvertCoreAsync(job, installation, progress, token,
+            automaticEncoders, automaticDecoder, hardwareIdentity), token);
 
     private static async Task ConvertCoreAsync(ConversionJob job, FfmpegInstallation installation,
-        IProgress<ConversionUpdate> progress, CancellationToken token)
+        IProgress<ConversionUpdate> progress, CancellationToken token,
+        IReadOnlyList<EncoderOption>? automaticEncoders, bool automaticDecoder, string hardwareIdentity)
     {
         string? temporary = null;
         ConversionTemporaryFile? work = null;
@@ -26,6 +33,7 @@ public sealed class VideoConversionService
         var tail = new Queue<string>();
         string logPath = "";
         string outputPath = "";
+        string? learningContext = null;
         void Write(string text)
         {
             lock (logGate)
@@ -82,8 +90,12 @@ public sealed class VideoConversionService
                 Write("Preferovaný jazyk nebyl nalezen; použita výchozí nebo první zvuková stopa.");
             var colorProbe = await VideoDiagnosticsService.ProbeAsync(input, installation,
                 detail => Report("Kontrola HDR", detail), token, video.Index);
-            var color = ReadColorInfo(colorProbe.RawJson, video.Index, settings.PreserveHdr);
+            var color = ReadColorInfo(colorProbe.RawJson, video.Index, settings.PreserveHdr, allowDolbyVision: true);
             bool preserveHdr = settings.PreserveHdr && color.IsHdr;
+            if (color.DolbyVisionProfile != 0)
+                Write($"Dolby Vision profil {(color.DolbyVisionProfile == 8 ? "8.1" : "7")}: "
+                    + $"používám pouze HDR10 kompatibilní základní vrstvu → {(preserveHdr ? "HDR10" : "SDR BT.709")}."
+                    + " Dynamická Dolby Vision metadata ani rozšiřující vrstva (včetně FEL) se nepoužijí a nepřenesou.");
             Write("Kontrola HDR metadat vychází z hlavičky a úvodních 64 video paketů, nikoli z celého souboru."
                 + " Zachování pozdějších dynamických změn metadat se neověřuje.");
             Write(color.IsHdr
@@ -91,6 +103,84 @@ public sealed class VideoConversionService
                     : $"HDR {color.Transfer} → SDR BT.709; tone mapping Mobius, referenční bílá 100 nitů."
                 : "SDR vstup; tone mapping se nepoužije.");
             Write("Vstup: " + info.Summary);
+            if (settings.AdaptiveHardware && automaticEncoders is { Count: > 0 })
+            {
+                var routes = automaticEncoders.SelectMany(encoder =>
+                {
+                    var baseline = new HardwareRoute(encoder.Encoder, settings.Decoder);
+                    if (!automaticDecoder)
+                        return (HardwareRoute[])[baseline];
+                    bool nvidia = encoder.Encoder.EndsWith("_nvenc", StringComparison.Ordinal)
+                        || encoder.Encoder.StartsWith("lib", StringComparison.Ordinal)
+                            && hardwareIdentity.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);
+                    return (HardwareRoute[])[baseline, new(encoder.Encoder,
+                        nvidia ? "cuda" : "d3d11va")];
+                }).Distinct().ToArray();
+                var originalSettings = settings;
+                string context = JsonSerializer.Serialize(new
+                {
+                    Schema = 1, hardwareIdentity, Environment.ProcessorCount,
+                    installation.Version, installation.PackageSha256,
+                    BinaryModified = File.GetLastWriteTimeUtc(installation.FfmpegPath),
+                    video.Codec, video.Width, video.Height, video.FrameRate, video.PixelFormat,
+                    color, settings.Profile, settings.Workload, settings.EncodingSpeed, settings.PreserveHdr, routes
+                });
+                learningContext = context;
+                string recommendation = "";
+                var route = await HardwareLearningService.SelectAsync(context, routes,
+                    new(settings.Encoder, settings.Decoder), async (candidate, cancellation) =>
+                    {
+                        var sampleSettings = originalSettings with { Encoder = candidate.Encoder, Decoder = candidate.Decoder };
+                        try
+                        {
+                            ValidateSettings(sampleSettings);
+                            Report("Učení hardwaru", $"Porovnávám {HardwareLearningService.Describe(candidate)} "
+                                + "(zahřátí a měření 2 × 48 snímků, nejvýše 30 s na cestu). Výstup se neukládá.");
+                            var sampleArgs = BuildArguments(input, "-", video, null, sampleSettings, color,
+                                preflight: true, sampleFrames: 48);
+                            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+                            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+                            HardwareMeasurement? measurement = null;
+                            // Discard a warm-up pass to reduce input-cache and initialization bias.
+                            for (int pass = 0; pass < 2; pass++)
+                            {
+                                using var sample = ConversionProcess.Create(installation.FfmpegPath, sampleArgs);
+                                int frames = 0;
+                                var elapsed = Stopwatch.StartNew();
+                                int code = await ConversionProcess.RunAsync(sample, line =>
+                                {
+                                    if (line.StartsWith("frame=", StringComparison.Ordinal)
+                                        && int.TryParse(line.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                                        frames = value;
+                                }, Write, timeout.Token, GetPriority(sampleSettings));
+                                elapsed.Stop();
+                                if (code != 0)
+                                {
+                                    Write($"Testovací cesta {HardwareLearningService.Describe(candidate)} není použitelná (kód {code}).");
+                                    return null;
+                                }
+                                measurement = new(candidate, elapsed.Elapsed.TotalSeconds,
+                                    sample.TotalProcessorTime.TotalSeconds, frames);
+                            }
+                            return measurement;
+                        }
+                        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+                        { Write("Testovací cesta překročila limit; nejde o měření efektivity."); return null; }
+                        catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException
+                            or InvalidOperationException or System.ComponentModel.Win32Exception)
+                        { Write("Testovací cesta selhala: " + ex.Message); return null; }
+                    }, detail =>
+                    {
+                        recommendation = detail;
+                        Write(detail);
+                        Report("Doporučení hardwaru", detail);
+                    }, Write, token);
+                settings = settings with { Encoder = route.Encoder, Decoder = route.Decoder };
+                ValidateSettings(settings);
+                progress.Report(new("Doporučení hardwaru",
+                    recommendation + $"\nPoužiji {HardwareLearningService.Describe(route)}. Filtry zůstávají na CPU.",
+                    LogTail: Tail(), LogPath: logPath, AppliedSettings: settings));
+            }
             if (settings.Decoder != "cpu" || color.IsHdr)
             {
                 Report("Ověření převodu", $"Ověřuji {settings.DecoderDescription}, filtry a enkodér krátkým průchodem (8 výstupních snímků).");
@@ -103,7 +193,8 @@ public sealed class VideoConversionService
                 int probeCode;
                 try
                 {
-                    probeCode = await ConversionProcess.RunAsync(probe, _ => { }, Write, timeout.Token);
+                    probeCode = await ConversionProcess.RunAsync(probe, _ => { }, Write, timeout.Token,
+                        GetPriority(settings));
                 }
                 catch (OperationCanceledException) when (!token.IsCancellationRequested)
                 {
@@ -111,7 +202,8 @@ public sealed class VideoConversionService
                 }
                 if (probeCode != 0)
                     throw new IOException($"Zvolená cesta převodu pro tento vstup selhala (kód {probeCode})."
-                        + " Podrobnosti jsou v protokolu; HDR → SDR vyžaduje filtry zscale a tonemap.");
+                        + " Podrobnosti jsou v protokolu; HDR → SDR vyžaduje filtry zscale a tonemap,"
+                        + " Dolby Vision také sidedata s podporou DOVI_RPU_BUFFER a DOVI_METADATA.");
                 Write("Krátká kontrola dekódování, CPU filtrů a zvoleného enkodéru dokončena."
                     + " Neověřuje celý vstup; automatické přepnutí na CPU není povoleno.");
             }
@@ -163,7 +255,7 @@ public sealed class VideoConversionService
                         Report("Převod", detail, percent);
                         break;
                 }
-            }, Write, token);
+            }, Write, token, GetPriority(settings));
             Write($"FFmpeg skončil s kódem {code}.");
             if (code != 0) throw new IOException($"FFmpeg selhal (kód {code}). Podrobnosti jsou v protokolu.");
             token.ThrowIfCancellationRequested();
@@ -188,7 +280,7 @@ public sealed class VideoConversionService
                     detail => Report("Kontrola HDR výstupu", detail, 99.9), token, outputVideo.Index);
                 var outputColor = ReadColorInfo(outputProbe.RawJson, outputVideo.Index, preserveHdr);
                 if (preserveHdr
-                    ? outputVideo.PixelFormat != "yuv420p10le" || outputColor != color
+                    ? outputVideo.PixelFormat != "yuv420p10le" || outputColor != (color with { DolbyVisionProfile = 0 })
                     : outputVideo.PixelFormat != "yuv420p" || outputColor.Transfer != "bt709"
                         || outputColor.Primaries != "bt709" || outputColor.Matrix != "bt709"
                         || outputColor.Range != "tv" || outputColor.MasterDisplay != "" || outputColor.ContentLight != "")
@@ -237,6 +329,11 @@ public sealed class VideoConversionService
         }
         catch (Exception ex)
         {
+            if (!published && ex is not OperationCanceledException && learningContext is not null)
+            {
+                try { await HardwareLearningService.ForgetAsync(learningContext, Write); }
+                catch (Exception cacheError) { Trace.TraceWarning("Zneplatnění měření selhalo: " + cacheError.Message); }
+            }
             // Once published, a logging problem must not claim the output was rolled back.
             string stage = published ? "Dokončeno s upozorněním"
                 : ex is OperationCanceledException ? "Zrušeno" : "Chyba";
@@ -279,14 +376,30 @@ public sealed class VideoConversionService
         if (!allowed.Contains(settings.Encoder)) throw new ArgumentException("Enkodér neodpovídá kodeku profilu.");
         if (settings.Decoder is not ("cpu" or "cuda" or "d3d11va"))
             throw new ArgumentException("Neplatný způsob dekódování.");
+        if (settings.Workload is not ("eco" or "balanced" or "maximum")
+            || settings.EncodingSpeed is not ("fast" or "balanced" or "quality"))
+            throw new ArgumentException("Neplatný režim zatížení nebo rychlosti enkódování.");
         if (settings.PreserveHdr && (p.Codec != "hevc" || settings.Encoder != "libx265"))
             throw new ArgumentException("Zachování HDR vyžaduje HEVC a CPU enkodér libx265.");
     }
 
+    private static ProcessPriorityClass GetPriority(ConversionSettings settings) => settings.Workload switch
+    {
+        "eco" => ProcessPriorityClass.Idle,
+        "maximum" => ProcessPriorityClass.Normal,
+        _ => ProcessPriorityClass.BelowNormal
+    };
+
     private static List<string> BuildArguments(string input, string output, VideoStreamInfo video,
-        VideoStreamInfo? audio, ConversionSettings settings, ColorInfo color, bool preflight = false)
+        VideoStreamInfo? audio, ConversionSettings settings, ColorInfo color, bool preflight = false, int sampleFrames = 8)
     {
         var p = settings.Profile;
+        string threads = settings.CpuThreads.ToString(CultureInfo.InvariantCulture);
+        // x265 manages its own worker pools; FFmpeg's -threads alone is insufficient.
+        var x265Parameters = new List<string>();
+        if (settings.Encoder == "libx265")
+            x265Parameters.AddRange((string[])[$"pools={threads}",
+                $"frame-threads={Math.Min(settings.CpuThreads, 4)}"]);
         // Orientation-independent bounding box: portrait mobile clips retain their orientation and size.
         int maxSide = Math.Max(p.Width, p.Height), minSide = Math.Min(p.Width, p.Height);
         string landscape = $"gte(iw,ih)";
@@ -303,6 +416,11 @@ public sealed class VideoConversionService
                 + "sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,"
                 + "sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,"
                 + "sidedata=mode=delete:type=DYNAMIC_HDR_PLUS," + filter;
+        // Only the independently HDR10-compatible base layer is used. Never feed stale
+        // RPU/reshaping metadata to the filters or encoder after scaling/tone mapping.
+        if (color.DolbyVisionProfile != 0)
+            filter = "sidedata=mode=delete:type=DOVI_RPU_BUFFER,"
+                + "sidedata=mode=delete:type=DOVI_METADATA," + filter;
         if (settings.Decoder != "cpu")
         {
             string downloadFormat = video.PixelFormat switch
@@ -320,8 +438,7 @@ public sealed class VideoConversionService
         {
             "-hide_banner", "-nostdin", "-y", "-loglevel", "info", "-nostats", "-stats_period", "0.5",
             "-progress", "pipe:1", "-protocol_whitelist", "file", "-threads",
-            Math.Clamp(Environment.ProcessorCount - 1, 1, 16).ToString(CultureInfo.InvariantCulture),
-            "-filter_threads", Math.Clamp(Environment.ProcessorCount - 1, 1, 16).ToString(CultureInfo.InvariantCulture)
+            threads, "-filter_threads", threads
         };
         if (settings.Decoder != "cpu")
             args.AddRange((string[])["-hwaccel", settings.Decoder, "-hwaccel_output_format",
@@ -333,7 +450,7 @@ public sealed class VideoConversionService
             "-c:v", settings.Encoder, "-b:v", $"{p.VideoKbps}k", "-maxrate", $"{p.VideoKbps}k",
             "-bufsize", $"{p.VideoKbps * 2}k", "-pix_fmt", pixelFormat,
             "-fps_mode:v", "cfr", "-fpsmax:v", p.Fps.ToString(CultureInfo.InvariantCulture),
-            "-threads", Math.Clamp(Environment.ProcessorCount - 1, 1, 16).ToString(CultureInfo.InvariantCulture)
+            "-threads:v", threads
         ]);
         if (color.IsHdr)
         {
@@ -344,18 +461,17 @@ public sealed class VideoConversionService
             if (preserveHdr)
             {
                 args.AddRange((string[])["-profile:v", "main10"]);
-                var parameters = new List<string>
-                {
+                x265Parameters.AddRange((string[])
+                [
                     "repeat-headers=1", "colorprim=bt2020", $"transfer={color.Transfer}",
                     "colormatrix=bt2020nc", $"range={(color.Range == "pc" ? "full" : "limited")}"
-                };
-                if (color.Transfer == "smpte2084") parameters.Add("hdr10=1");
-                if (color.MasterDisplay != "") parameters.Add("master-display=" + color.MasterDisplay);
-                if (color.ContentLight != "") parameters.Add("max-cll=" + color.ContentLight);
-                args.AddRange((string[])["-x265-params", string.Join(":", parameters)]);
+                ]);
+                if (color.Transfer == "smpte2084") x265Parameters.Add("hdr10=1");
+                if (color.MasterDisplay != "") x265Parameters.Add("master-display=" + color.MasterDisplay);
+                if (color.ContentLight != "") x265Parameters.Add("max-cll=" + color.ContentLight);
             }
         }
-        if (preflight) args.AddRange((string[])["-frames:v", "8", "-f", "null"]);
+        if (preflight) args.AddRange((string[])["-frames:v", sampleFrames.ToString(CultureInfo.InvariantCulture), "-f", "null"]);
         else args.AddRange((string[])["-movflags", "+faststart", "-f", "mp4"]);
         if (audio is not null)
         {
@@ -367,8 +483,18 @@ public sealed class VideoConversionService
                 args.AddRange((string[])["-metadata:s:a:0", $"title={audio.Title}"]);
         }
         else args.Add("-an");
-        if (settings.Encoder is "libx264" or "libx265") args.AddRange((string[])["-preset", "medium"]);
-        if (settings.Encoder.EndsWith("_nvenc", StringComparison.Ordinal)) args.AddRange((string[])["-preset", "p4"]);
+        if (x265Parameters.Count > 0)
+            args.AddRange((string[])["-x265-params", string.Join(":", x265Parameters)]);
+        string cpuPreset = settings.EncodingSpeed switch { "fast" => "veryfast", "quality" => "slow", _ => "medium" };
+        if (settings.Encoder is "libx264" or "libx265"
+            || settings.Encoder.EndsWith("_qsv", StringComparison.Ordinal))
+            args.AddRange((string[])["-preset", cpuPreset]);
+        if (settings.Encoder.EndsWith("_nvenc", StringComparison.Ordinal))
+            args.AddRange((string[])["-preset",
+                settings.EncodingSpeed switch { "fast" => "p1", "quality" => "p7", _ => "p4" }]);
+        if (settings.Encoder.EndsWith("_amf", StringComparison.Ordinal))
+            args.AddRange((string[])["-quality",
+                settings.EncodingSpeed switch { "fast" => "speed", "quality" => "quality", _ => "balanced" }]);
         if (p.Codec == "h264") args.AddRange((string[])["-profile:v", "high"]);
         if (p.Codec == "hevc") args.AddRange((string[])["-tag:v", "hvc1"]);
         args.Add(output);
@@ -376,12 +502,12 @@ public sealed class VideoConversionService
     }
 
     private sealed record ColorInfo(string Transfer, string Primaries, string Matrix, string Range,
-        string MasterDisplay, string ContentLight)
+        string MasterDisplay, string ContentLight, int DolbyVisionProfile = 0)
     {
         public bool IsHdr => Transfer is "smpte2084" or "arib-std-b67";
     }
 
-    private static ColorInfo ReadColorInfo(string rawJson, int streamIndex, bool preserve)
+    private static ColorInfo ReadColorInfo(string rawJson, int streamIndex, bool preserve, bool allowDolbyVision = false)
     {
         using var json = JsonDocument.Parse(rawJson);
         var stream = json.RootElement.GetProperty("streams").EnumerateArray()
@@ -398,13 +524,14 @@ public sealed class VideoConversionService
         AddSideData(stream);
         if (json.RootElement.TryGetProperty("frames", out var frames))
             foreach (var frame in frames.EnumerateArray()) AddSideData(frame);
+        int dolbyVisionProfile = ReadDolbyVisionProfile(sideData, allowDolbyVision);
+        if (dolbyVisionProfile != 0 && (Text(stream, "codec_name") != "hevc"
+            || Text(stream, "pix_fmt") != "yuv420p10le" || Text(stream, "color_transfer") != "smpte2084"))
+            throw new NotSupportedException("Dolby Vision základní vrstva musí být HEVC 10 bitů s jednoznačnou PQ přenosovou funkcí.");
         string master = "", light = "";
         foreach (var data in sideData)
         {
             string type = Text(data, "side_data_type");
-            if (type.Contains("DOVI", StringComparison.OrdinalIgnoreCase)
-                || type.Contains("Dolby Vision", StringComparison.OrdinalIgnoreCase))
-                throw new NotSupportedException("Dolby Vision zatím není podporované; převod nebyl spuštěn.");
             if (preserve && (type.Contains("2094", StringComparison.OrdinalIgnoreCase)
                 || type.Contains("HDR10+", StringComparison.OrdinalIgnoreCase)))
                 throw new NotSupportedException("Zachování dynamických HDR10+ metadat zatím není podporované. Lze zvolit HDR → SDR.");
@@ -432,7 +559,7 @@ public sealed class VideoConversionService
             }
         }
         var result = new ColorInfo(Text(stream, "color_transfer"), Text(stream, "color_primaries"),
-            Text(stream, "color_space"), Text(stream, "color_range"), master, light);
+            Text(stream, "color_space"), Text(stream, "color_range"), master, light, dolbyVisionProfile);
         if (result.IsHdr && (result.Primaries != "bt2020" || result.Matrix != "bt2020nc"
             || result.Range is not ("tv" or "pc")))
             throw new NotSupportedException("HDR vyžaduje jednoznačné údaje BT.2020, BT.2020 non-constant a rozsah tv/pc. Chybějící údaje se neodhadují.");
@@ -441,6 +568,47 @@ public sealed class VideoConversionService
         if (!result.IsHdr && (master != "" || light != ""))
             throw new NotSupportedException("Vstup obsahuje HDR metadata, ale nemá jednoznačně označenou PQ/HLG přenosovou funkci.");
         return result;
+    }
+
+    private static int ReadDolbyVisionProfile(List<JsonElement> sideData, bool allow)
+    {
+        (int Profile, int Compatibility, int BaseLayer, int EnhancementLayer, int Rpu)? configuration = null;
+        bool found = false;
+        foreach (var data in sideData)
+        {
+            if (!data.TryGetProperty("side_data_type", out var typeElement)) continue;
+            string type = typeElement.GetString() ?? "";
+            if (!type.Contains("DOVI", StringComparison.OrdinalIgnoreCase)
+                && !type.Contains("Dolby Vision", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!allow)
+                throw new InvalidDataException("Výstup stále obsahuje Dolby Vision metadata; nebyl publikován.");
+            found = true;
+            if (!data.TryGetProperty("dv_profile", out _)) continue;
+            static int Number(JsonElement element, string name) =>
+                element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+                    && value.TryGetInt32(out int number)
+                    ? number : throw new InvalidDataException("Chybí nebo je neplatný údaj Dolby Vision: " + name);
+            var current = (Profile: Number(data, "dv_profile"),
+                Compatibility: Number(data, "dv_bl_signal_compatibility_id"),
+                BaseLayer: Number(data, "bl_present_flag"),
+                EnhancementLayer: Number(data, "el_present_flag"),
+                Rpu: Number(data, "rpu_present_flag"));
+            if (configuration is { } previous && previous != current)
+                throw new NotSupportedException("Proměnlivá konfigurace Dolby Vision není podporovaná.");
+            configuration = current;
+        }
+        if (!found) return 0;
+        if (configuration is not { } config)
+            throw new NotSupportedException("Chybí konfigurace Dolby Vision. Bez ní nelze potvrdit HDR10 kompatibilní základní vrstvu.");
+        // Profile 7 uses Blu-ray HDR10 compatibility ID 6; profile 8.1 uses ID 1.
+        bool hdr10Base = (config.Profile == 7 && config.Compatibility is 1 or 6)
+            || (config.Profile == 8 && config.Compatibility == 1 && config.EnhancementLayer == 0);
+        if (!hdr10Base || config.BaseLayer != 1 || config.Rpu != 1
+            || config.EnhancementLayer is not (0 or 1))
+            throw new NotSupportedException($"Dolby Vision profil {config.Profile}, kompatibilita {config.Compatibility}: "
+                + "převod do SDR/HDR10 podporuje pouze profily 7 a 8.1 s HDR10 kompatibilní základní vrstvou."
+                + " Profil 5 ani HLG/SDR varianty profilu 8 nelze touto cestou barevně správně převést.");
+        return config.Profile;
     }
 
     private static string MetadataNumber(JsonElement data, string name, decimal scale, decimal maximum)

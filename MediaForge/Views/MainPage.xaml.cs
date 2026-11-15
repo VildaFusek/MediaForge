@@ -97,6 +97,13 @@ public sealed partial class MainPage : Page
 
     private void MainPage_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateResponsiveLayout();
     private void SidebarToggle_Changed(object sender, RoutedEventArgs e) => UpdateResponsiveLayout();
+    private void ConversionToggle_Changed(object sender, RoutedEventArgs e) => UpdateResponsiveLayout();
+
+    public void ShowConversionPanel()
+    {
+        ConversionToggleButton.IsChecked = true;
+        UpdateResponsiveLayout();
+    }
     private void UpdateFilesLayout()
     {
         var selected = ViewModel.SelectedItems.ToArray();
@@ -116,11 +123,22 @@ public sealed partial class MainPage : Page
     }
     private void UpdateResponsiveLayout()
     {
-        if (SidebarPane is null || DetailsPane is null) return;
+        if (SidebarPane is null || DetailsPane is null || ConversionPane is null) return;
+        bool showConversion = ConversionToggleButton.IsChecked == true;
+        bool sideBySide = ActualWidth >= 1250;
+        ConversionPane.Visibility = showConversion ? Visibility.Visible : Visibility.Collapsed;
+        ConversionColumn.Width = new GridLength(showConversion && sideBySide ? 560 : 0);
+        Grid.SetColumn(ConversionPane, sideBySide ? 1 : 0);
+        Grid.SetRow(ConversionPane, sideBySide ? 0 : 1);
+        FilesWorkspaceRow.Height = new GridLength(1, GridUnitType.Star);
+        ConversionWorkspaceRow.Height = showConversion && !sideBySide
+            ? new GridLength(1.2, GridUnitType.Star) : new GridLength(0);
         bool showSidebar = SidebarToggleButton.IsChecked == true;
-        SidebarColumn.Width = new GridLength(showSidebar ? ActualWidth >= 1100 ? 220 : 190 : 0);
+        SidebarColumn.Width = new GridLength(showSidebar
+            ? showConversion && sideBySide ? 170 : ActualWidth >= 1100 ? 220 : 190 : 0);
         SidebarPane.Visibility = showSidebar ? Visibility.Visible : Visibility.Collapsed;
-        DetailsPane.Visibility = ActualWidth >= 1200 && ViewModel.ShowDetails ? Visibility.Visible : Visibility.Collapsed;
+        double explorerWidth = ActualWidth - (showConversion && sideBySide ? 560 : 0);
+        DetailsPane.Visibility = explorerWidth >= 1200 && ViewModel.ShowDetails ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static bool Pressed(VirtualKey key) =>
@@ -136,6 +154,8 @@ public sealed partial class MainPage : Page
     private async void MainPage_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Handled || _dialogActive) return;
+        // Conversion controls share the page, but must not trigger explorer shortcuts.
+        if (FindAncestor<Views.ConversionPanel>(e.OriginalSource) is not null) return;
         bool ctrl = Pressed(VirtualKey.Control);
         bool alt = Pressed(VirtualKey.Menu);
         bool shift = Pressed(VirtualKey.Shift);
@@ -151,6 +171,12 @@ public sealed partial class MainPage : Page
             || FindAncestor<PasswordBox>(e.OriginalSource) is not null
             || FindAncestor<RichEditBox>(e.OriginalSource) is not null) return;
         if (!ViewModel.IsIdle) return;
+        if (ctrl && !alt && e.Key == VirtualKey.A)
+        {
+            FilesListView.SelectAll();
+            e.Handled = true;
+            return;
+        }
         if (alt && !ctrl)
         {
             switch (e.Key)
@@ -172,7 +198,6 @@ public sealed partial class MainPage : Page
                 case VirtualKey.C: ViewModel.CopyToClipboardCommand.Execute(null); break;
                 case VirtualKey.X: ViewModel.CutToClipboardCommand.Execute(null); break;
                 case VirtualKey.V: await ViewModel.PasteClipboardCommand.ExecuteAsync(null); break;
-                case VirtualKey.A: FilesListView.SelectAll(); break;
                 case VirtualKey.N when shift: await ShowNameDialogAsync(false); break;
                 default: return;
             }
@@ -243,7 +268,21 @@ public sealed partial class MainPage : Page
     {
         if (_dialogActive || !ViewModel.IsIdle) return;
         if (FindAncestor<ListViewItem>(e.OriginalSource)?.Content is FileSystemItem item)
-        { e.Handled = true; await ViewModel.OpenItemCommand.ExecuteAsync(item); }
+        {
+            e.Handled = true;
+            if (item.IsDirectory) await ViewModel.OpenItemCommand.ExecuteAsync(item);
+            else if (!item.IsLink)
+            {
+                try
+                {
+                    var conversion = ConversionViewModel.Instance;
+                    conversion.AddInputs((string[])[item.FullPath]);
+                    ShowConversionPanel();
+                    await conversion.InitializeAsync();
+                }
+                catch (Exception ex) { ViewModel.ReportError("Video nelze přidat do fronty", ex); }
+            }
+        }
     }
     private void FilesListView_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {

@@ -6,6 +6,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:MediaForge.Models"
     xmlns:controls="using:MediaForge.Controls"
+    xmlns:views="using:MediaForge.Views"
     Background="Transparent"
     KeyDown="MainPage_KeyDown"
     SizeChanged="MainPage_SizeChanged">
@@ -75,6 +76,54 @@
         </DataTemplate>
     </Page.Resources>
 
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+            <Grid Padding="12,4" ColumnSpacing="12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <MenuBar Background="Transparent">
+                    <MenuBarItem Title="Soubor">
+                        <MenuFlyoutItem Text="Otevřít složku…" Icon="OpenFile" Click="BrowseFolder_Click" IsEnabled="{Binding IsIdle}"/>
+                        <MenuFlyoutItem Text="Nová složka…" Icon="Add" Click="CreateFolderButton_Click" IsEnabled="{Binding CanCreate}"/>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem Text="Přidat vybraná videa do převodů" Click="ConvertVideos_Click" IsEnabled="{Binding IsIdle}"/>
+                        <MenuFlyoutItem Text="Vlastnosti" Icon="Page" Click="PropertiesButton_Click" IsEnabled="{Binding HasSingleSelection}"/>
+                    </MenuBarItem>
+                    <MenuBarItem Title="Úpravy" IsEnabled="{Binding IsIdle}">
+                        <MenuFlyoutItem Text="Vyjmout" Icon="Cut" Command="{Binding CutToClipboardCommand}" IsEnabled="{Binding HasSelection}"/>
+                        <MenuFlyoutItem Text="Kopírovat" Icon="Copy" Command="{Binding CopyToClipboardCommand}" IsEnabled="{Binding HasSelection}"/>
+                        <MenuFlyoutItem Text="Vložit" Icon="Paste" Command="{Binding PasteClipboardCommand}" IsEnabled="{Binding CanPaste}"/>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem Text="Přejmenovat…" Icon="Rename" Click="RenameItemButton_Click" IsEnabled="{Binding HasSingleSelection}"/>
+                        <MenuFlyoutItem Text="Přesunout do Koše…" Icon="Delete" Click="DeleteFilesButton_Click" IsEnabled="{Binding HasSelection}"/>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem Text="Vybrat vše" Icon="SelectAll" Click="SelectAllButton_Click" IsEnabled="{Binding IsIdle}"/>
+                        <MenuFlyoutItem Text="Zrušit výběr" Click="ClearSelectionButton_Click" IsEnabled="{Binding IsIdle}"/>
+                    </MenuBarItem>
+                    <MenuBarItem Title="Nástroje">
+                        <MenuFlyoutItem Text="FFmpeg: instalace a aktualizace…" Click="FfmpegStatus_Click"/>
+                        <MenuFlyoutItem Text="Chytře přejmenovat podle metadat…" Click="SmartRename_Click" IsEnabled="{Binding CanSmartRename}"/>
+                        <MenuFlyoutItem Text="Kopírovat a ověřit SHA-256…" Click="CopyAndVerifyButton_Click" IsEnabled="{Binding CanVerify}"/>
+                    </MenuBarItem>
+                </MenuBar>
+                <ToggleButton x:Name="ConversionToggleButton" Grid.Column="1" IsChecked="True"
+                              Checked="ConversionToggle_Changed" Unchecked="ConversionToggle_Changed"
+                              VerticalAlignment="Center" AutomationProperties.Name="Zobrazit panel převodů"
+                              ToolTipService.ToolTip="Nastavení a fronta převodů; skrytí nezastaví běžící úlohy">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <controls:RepoIcon Data="{StaticResource RepoVideo}"/>
+                        <TextBlock Text="Převody" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </ToggleButton>
+            </Grid>
+        </Border>
+        <Grid x:Name="WorkspaceLayout" Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="ConversionColumn" Width="560"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition x:Name="FilesWorkspaceRow" Height="*"/><RowDefinition x:Name="ConversionWorkspaceRow" Height="0"/></Grid.RowDefinitions>
     <Grid x:Name="ExplorerSurface" RowSpacing="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -164,10 +213,10 @@
             <Button x:Name="ConvertSelectedButton" Click="ConvertVideos_Click" IsEnabled="{Binding IsIdle}"
                     AutomationProperties.Name="Převést vybraná videa"
                     Style="{ThemeResource AccentButtonStyle}" VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Vybraná videa rovnou zařadit do fronty; bez výběru otevřít převody">
+                    ToolTipService.ToolTip="Přidat vybraná videa do fronty v sousedním panelu; převod spustíte až po nastavení">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <controls:RepoIcon Data="{StaticResource RepoVideo}" Foreground="{Binding Foreground, ElementName=ConvertSelectedButton}"/>
-                    <TextBlock Text="Převést videa" VerticalAlignment="Center"/>
+                    <TextBlock Text="Do fronty převodů" VerticalAlignment="Center"/>
                 </StackPanel>
             </Button>
         <CommandBar Grid.Column="1" DefaultLabelPosition="Right" IsOpen="False" Background="Transparent"
@@ -275,7 +324,9 @@
                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="{Binding FolderTitle}" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding ItemCountText}" FontSize="12" Opacity="0.6"/>
+                             <TextBlock Text="{Binding ItemCountText}" FontSize="12" Opacity="0.6"/>
+                             <TextBlock Text="Dvojklik přidá video do fronty. Ctrl+A označí všechny položky."
+                                        FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Grid>
                     <CheckBox Grid.Column="1" IsChecked="{Binding ShowThumbnails, Mode=TwoWay}"
@@ -332,31 +383,37 @@
                                 <ComboBox Header="Stav analýzy" SelectedIndex="{Binding AnalysisFilterIndex, Mode=TwoWay}" HorizontalAlignment="Stretch">
                                     <ComboBoxItem Content="Všechna videa"/><ComboBoxItem Content="Analyzovaná"/><ComboBoxItem Content="Neanalyzovaná"/>
                                 </ComboBox>
-                                <TextBox Grid.Column="1" Header="Video kodek" PlaceholderText="např. hevc, h264"
-                                         Text="{Binding VideoCodecFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                <TextBox Grid.Column="2" Header="Kontejner" PlaceholderText="např. matroska, mov"
-                                         Text="{Binding ContainerFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                <NumberBox Grid.Row="1" Header="Výška od (px)" Minimum="0" Maximum="100000"
-                                           Value="{Binding MinimumHeight, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
-                                <NumberBox Grid.Row="1" Grid.Column="1" Header="Výška do (px)" Minimum="0" Maximum="100000"
-                                           Value="{Binding MaximumHeight, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <ComboBox Grid.Column="1" Header="Video kodek" ItemsSource="{Binding VideoCodecOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding VideoCodecFilter, Mode=TwoWay}"/>
+                                <ComboBox Grid.Column="2" Header="Kontejner" ItemsSource="{Binding ContainerOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding ContainerFilter, Mode=TwoWay}"/>
+                                <ComboBox Grid.Row="1" Header="Výška od (px)" ItemsSource="{Binding HeightOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding MinimumHeight, Mode=TwoWay}"/>
+                                <ComboBox Grid.Row="1" Grid.Column="1" Header="Výška do (px)" ItemsSource="{Binding HeightOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding MaximumHeight, Mode=TwoWay}"/>
                                 <ComboBox Grid.Row="1" Grid.Column="2" Header="Snímková frekvence" HorizontalAlignment="Stretch"
-                                          SelectedIndex="{Binding FrameRateFilterIndex, Mode=TwoWay}">
-                                    <ComboBoxItem Content="Libovolné FPS"/><ComboBoxItem Content="Do 30 fps"/>
-                                    <ComboBoxItem Content="Nad 30 fps"/><ComboBoxItem Content="50 fps a více"/>
-                                </ComboBox>
-                                <NumberBox Grid.Row="2" Header="Délka od (min)" Minimum="0"
-                                           Value="{Binding MinimumDurationMinutes, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
-                                <NumberBox Grid.Row="2" Grid.Column="1" Header="Délka do (min)" Minimum="0"
-                                           Value="{Binding MaximumDurationMinutes, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                          ItemsSource="{Binding FrameRateOptions}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding FrameRateFilter, Mode=TwoWay}"/>
+                                <ComboBox Grid.Row="2" Header="Délka od (min)" ItemsSource="{Binding DurationOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding MinimumDurationMinutes, Mode=TwoWay}"/>
+                                <ComboBox Grid.Row="2" Grid.Column="1" Header="Délka do (min)" ItemsSource="{Binding DurationOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding MaximumDurationMinutes, Mode=TwoWay}"/>
                                 <ComboBox Grid.Row="2" Grid.Column="2" Header="Zvuk" HorizontalAlignment="Stretch"
                                           SelectedIndex="{Binding AudioFilterIndex, Mode=TwoWay}">
                                     <ComboBoxItem Content="Libovolný"/><ComboBoxItem Content="Se zvukem"/><ComboBoxItem Content="Bez zvuku"/>
                                 </ComboBox>
-                                <NumberBox Grid.Row="3" Header="Datový tok od (Mb/s)" Minimum="0"
-                                           Value="{Binding MinimumBitRateMbps, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
-                                <NumberBox Grid.Row="3" Grid.Column="1" Header="Datový tok do (Mb/s)" Minimum="0"
-                                           Value="{Binding MaximumBitRateMbps, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <ComboBox Grid.Row="3" Header="Datový tok od (Mb/s)" ItemsSource="{Binding BitRateOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding MinimumBitRateMbps, Mode=TwoWay}"/>
+                                <ComboBox Grid.Row="3" Grid.Column="1" Header="Datový tok do (Mb/s)" ItemsSource="{Binding BitRateOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value" HorizontalAlignment="Stretch"
+                                          SelectedValue="{Binding MaximumBitRateMbps, Mode=TwoWay}"/>
                                 <ComboBox Grid.Row="3" Grid.Column="2" Header="Titulky" HorizontalAlignment="Stretch"
                                           SelectedIndex="{Binding SubtitleFilterIndex, Mode=TwoWay}">
                                     <ComboBoxItem Content="Libovolné"/><ComboBoxItem Content="S titulky"/><ComboBoxItem Content="Bez titulků"/>
@@ -476,6 +533,13 @@
             </Button>
             <CheckBox Grid.Column="3" Content="Skryté položky" IsChecked="{Binding ShowHidden, Mode=TwoWay}"
                       IsEnabled="{Binding IsIdle}" VerticalAlignment="Center" FontSize="12"/>
+        </Grid>
+    </Grid>
+            <Border x:Name="ConversionPane" Grid.Column="1" BorderThickness="1,1,0,0"
+                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <views:ConversionPanel/>
+            </Border>
         </Grid>
     </Grid>
 </Page>

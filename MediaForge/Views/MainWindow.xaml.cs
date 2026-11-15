@@ -31,7 +31,7 @@ namespace MediaForge
             AppWindow.Closing += AppWindow_Closing;
             Views.ConversionWindows.ActivateControls = () =>
             {
-                WorkspaceTabs.SelectedItem = ConversionTab;
+                if (RootFrame.Content is MainPage page) page.ShowConversionPanel();
                 Activate();
             };
 
@@ -66,7 +66,7 @@ namespace MediaForge
                     var dialog = new ContentDialog
                     {
                         Title = "Probíhá fronta převodů",
-                        Content = "Před ukončením aplikace dokončete nebo zrušte převod. Čekající fronta se po restartu neobnovuje. Zavření monitoru ani přepnutí karty převod neruší.",
+                        Content = "Před ukončením aplikace dokončete nebo zrušte převod. Čekající fronta se po restartu neobnovuje. Zavření monitoru ani skrytí panelu převod neruší.",
                         PrimaryButtonText = "Zrušit převod a zastavit frontu",
                         CloseButtonText = "Pokračovat v práci",
                         DefaultButton = ContentDialogButton.Close,

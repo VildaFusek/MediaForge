@@ -27,6 +27,8 @@ public partial class ConversionViewModel : ObservableObject
     public IReadOnlyList<string> Codecs { get; } = (string[])["h264", "hevc"];
     public IReadOnlyList<DecoderOption> Decoders => DecoderOption.All;
     public IReadOnlyList<HdrOption> HdrOptions => HdrOption.All;
+    public IReadOnlyList<ConversionLoadOption> WorkloadOptions => ConversionLoadOption.All;
+    public IReadOnlyList<EncodingSpeedOption> EncodingSpeedOptions => EncodingSpeedOption.All;
     public ObservableCollection<EncoderOption> Encoders { get; } = [];
     public ObservableCollection<ConversionJob> Jobs { get; } = [];
     public ObservableCollection<ConversionInput> Inputs { get; } = [];
@@ -38,6 +40,11 @@ public partial class ConversionViewModel : ObservableObject
     [ObservableProperty] public partial EncoderOption? SelectedEncoder { get; set; }
     [ObservableProperty] public partial DecoderOption SelectedDecoder { get; set; } = DecoderOption.All[0];
     [ObservableProperty] public partial HdrOption SelectedHdr { get; set; } = HdrOption.All[0];
+    [ObservableProperty] public partial ConversionLoadOption SelectedWorkload { get; set; } = ConversionLoadOption.All[1];
+    [ObservableProperty] public partial EncodingSpeedOption SelectedEncodingSpeed { get; set; } = EncodingSpeedOption.All[1];
+    [ObservableProperty] public partial bool AdaptiveHardware { get; set; } = true;
+    [ObservableProperty] public partial string HardwareRecommendation { get; set; } =
+        "Automatický výběr porovná krátký úsek videa na CPU a ověřených GPU. Výsledek si zapamatuje pro podobné vstupy na tomto PC.";
     [ObservableProperty] public partial bool IsManual { get; set; }
     [ObservableProperty] public partial string ManualCodec { get; set; } = "h264";
     [ObservableProperty] public partial double Width { get; set; } = 1920;
@@ -126,7 +133,8 @@ public partial class ConversionViewModel : ObservableObject
             if (e.PropertyName is nameof(SelectedPreset) or nameof(SelectedEncoder) or nameof(SelectedDecoder)
                 or nameof(IsManual) or nameof(ManualCodec) or nameof(Width) or nameof(Height)
                 or nameof(FrameRate) or nameof(VideoKbps) or nameof(AudioKbps)
-                or nameof(OutputDirectory) or nameof(UseSourceDirectory) or nameof(UseSmartOutputNames) or nameof(SelectedHdr))
+                or nameof(OutputDirectory) or nameof(UseSourceDirectory) or nameof(UseSmartOutputNames) or nameof(SelectedHdr)
+                or nameof(SelectedWorkload) or nameof(SelectedEncodingSpeed) or nameof(AdaptiveHardware))
                 ApplySettingsToWaiting();
             if (e.PropertyName is nameof(IsRunning) or nameof(IsDetecting) or nameof(IsLoadingTracks))
                 OnPropertyChanged(nameof(NextStep));
@@ -190,6 +198,9 @@ public partial class ConversionViewModel : ObservableObject
         OutputDirectory = settings.OutputDirectory;
         UseSmartOutputNames = settings.UseSmartName;
         SelectedHdr = HdrOptions.First(h => h.Preserve == settings.PreserveHdr);
+        SelectedWorkload = WorkloadOptions.First(o => o.Value == settings.Workload);
+        SelectedEncodingSpeed = EncodingSpeedOptions.First(o => o.Value == settings.EncodingSpeed);
+        AdaptiveHardware = settings.AdaptiveHardware;
     }
 
     private void UpdateEncoders()
@@ -201,7 +212,7 @@ public partial class ConversionViewModel : ObservableObject
             string codec = IsManual ? ManualCodec : SelectedPreset.Codec;
             string? previous = SelectedEncoder?.Encoder;
             Encoders.Clear();
-            Encoders.Add(new("Automaticky – ověřená GPU, jinak CPU", "auto", codec));
+            Encoders.Add(new("Automaticky – doporučení podle měření CPU / GPU", "auto", codec));
             foreach (var encoder in _hardware?.Encoders.Where(e => e.Codec == codec) ?? [])
                 Encoders.Add(encoder);
             SelectedEncoder = Encoders.FirstOrDefault(e => e.Encoder == previous) ?? Encoders[0];
@@ -393,7 +404,8 @@ public partial class ConversionViewModel : ObservableObject
             SystemAudioLanguage, input.SelectedVideo?.Stream?.Index, input.SelectedAudio?.Stream?.Index,
             input.Metadata is not null && input.SelectedAudio?.Stream is null, input.Metadata,
             Decoder: SelectedDecoder?.HwAccel ?? "cpu", UseSmartName: UseSmartOutputNames,
-            PreserveHdr: SelectedHdr.Preserve);
+            PreserveHdr: SelectedHdr.Preserve, Workload: SelectedWorkload.Value,
+            EncodingSpeed: SelectedEncodingSpeed.Value, AdaptiveHardware: AdaptiveHardware);
     }
 
     private void ApplySettingsToWaiting()
@@ -458,6 +470,8 @@ public partial class ConversionViewModel : ObservableObject
             while (updates.TryDequeue(out var update))
             {
                 if (active is null) continue;
+                if (update.AppliedSettings is { } applied) active.Settings = applied;
+                if (update.Stage == "Doporučení hardwaru") HardwareRecommendation = update.Detail;
                 if (update.Stage is "Úklid selhal" or "Protokol")
                 {
                     if (update.Stage == "Úklid selhal")
@@ -506,9 +520,24 @@ public partial class ConversionViewModel : ObservableObject
                 CurrentIndeterminate = true;
                 try
                 {
-                    active.Settings = active.Settings with { Encoder = ResolveEncoder(active.Settings) };
+                    var requested = active.Settings;
+                    bool automaticDecoder = requested.Decoder == "auto";
+                    IReadOnlyList<EncoderOption>? candidates = null;
+                    if (requested.AdaptiveHardware && (requested.Encoder == "auto" || automaticDecoder))
+                    {
+                        candidates = requested.Encoder == "auto"
+                            ? _hardware?.Encoders.Where(e => e.Codec == requested.Profile.Codec
+                                && (!requested.PreserveHdr || e.Encoder == "libx265")).ToArray()
+                            : (EncoderOption[])[new(requested.Encoder, requested.Encoder, requested.Profile.Codec)];
+                    }
+                    active.Settings = requested with
+                    {
+                        Encoder = ResolveEncoder(requested),
+                        Decoder = automaticDecoder ? "cpu" : requested.Decoder
+                    };
                     await _service.ConvertAsync(active, installation,
-                        new InlineProgress<ConversionUpdate>(updates.Enqueue), cancellation.Token);
+                        new InlineProgress<ConversionUpdate>(updates.Enqueue), cancellation.Token,
+                        candidates, automaticDecoder, _hardware?.Summary ?? "");
                 }
                 catch (OperationCanceledException) { active.Status = "Zrušeno"; }
                 catch (Exception ex) { active.Status = "Chyba"; active.Detail = ex.Message; }

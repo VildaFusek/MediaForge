@@ -22,7 +22,7 @@ internal static class ConversionProcess
     }
 
     internal static async Task<int> RunAsync(Process process, Action<string> stdout, Action<string> stderr,
-        CancellationToken token)
+        CancellationToken token, ProcessPriorityClass priority = ProcessPriorityClass.BelowNormal)
     {
         token.ThrowIfCancellationRequested();
         using var job = new ConversionProcessJob();
@@ -38,7 +38,7 @@ internal static class ConversionProcess
             }
             throw;
         }
-        try { process.PriorityClass = ProcessPriorityClass.BelowNormal; }
+        try { process.PriorityClass = priority; }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         { Trace.TraceWarning(ex.Message); }
         using var stop = token.Register(() =>
