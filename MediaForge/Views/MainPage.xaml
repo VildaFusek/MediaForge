@@ -1,0 +1,481 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="MediaForge.MainPage"
+    x:Name="ExplorerRoot"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:MediaForge.Models"
+    xmlns:controls="using:MediaForge.Controls"
+    Background="Transparent"
+    KeyDown="MainPage_KeyDown"
+    SizeChanged="MainPage_SizeChanged">
+    <Page.Resources>
+        <Style x:Key="NavigationButtonStyle" TargetType="Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
+        <Style x:Key="ColumnButtonStyle" TargetType="Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+        <ItemsPanelTemplate x:Key="FileRowsPanel"><ItemsStackPanel/></ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="ThumbnailCardsPanel">
+            <ItemsWrapGrid Orientation="Horizontal" ItemWidth="260" ItemHeight="180"/>
+        </ItemsPanelTemplate>
+        <DataTemplate x:Key="FileRowTemplate" x:DataType="models:FileSystemItem">
+            <Grid ColumnSpacing="12" Padding="6,8" ToolTipService.ToolTip="{x:Bind FullPath}"
+                  Opacity="{x:Bind ItemOpacity, Mode=OneWay}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/><ColumnDefinition Width="145"/>
+                    <ColumnDefinition Width="95"/><ColumnDefinition Width="90"/>
+                </Grid.ColumnDefinitions>
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <SymbolIcon Symbol="{x:Bind DisplayIcon}" Width="20" Height="20"
+                                Foreground="{x:Bind ItemForeground, Mode=OneWay}"/>
+                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
+                                   Foreground="{x:Bind ItemForeground, Mode=OneWay}"/>
+                        <TextBlock Text="{x:Bind AnalysisLabel, Mode=OneWay}" FontSize="10"
+                                   Opacity="0.75" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Grid.Column="1" Text="{x:Bind FormattedDate}" VerticalAlignment="Center" Opacity="0.75"/>
+                <TextBlock Grid.Column="2" Text="{x:Bind TypeName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Opacity="0.75"/>
+                <TextBlock Grid.Column="3" Text="{x:Bind FormattedSize}" VerticalAlignment="Center" TextAlignment="Right" Opacity="0.75"/>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="VideoCardTemplate" x:DataType="models:FileSystemItem">
+            <Border Margin="4" CornerRadius="8" BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}" ToolTipService.ToolTip="{x:Bind FullPath}"
+                    Opacity="{x:Bind ItemOpacity, Mode=OneWay}">
+                <Grid CornerRadius="8">
+                    <Grid.Background>
+                        <ImageBrush ImageSource="{x:Bind ThumbnailImage, Mode=OneWay}" Stretch="UniformToFill"/>
+                    </Grid.Background>
+                    <SymbolIcon Symbol="{x:Bind DisplayIcon}" Width="48" Height="48" Opacity="0.6"
+                                Foreground="{x:Bind ItemForeground, Mode=OneWay}"
+                                Visibility="{x:Bind ThumbnailPlaceholderVisibility, Mode=OneWay}"/>
+                    <Border VerticalAlignment="Bottom" Padding="10,8" Background="#D0000000" CornerRadius="0,0,8,8">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Foreground="{x:Bind ItemForeground, Mode=OneWay}"/>
+                            <TextBlock Text="{x:Bind AnalysisLabel, Mode=OneWay}" FontSize="10"
+                                       TextTrimming="CharacterEllipsis" Foreground="White"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid x:Name="ExplorerSurface" RowSpacing="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Navigation and address always stay reachable, even with command-bar overflow. -->
+        <Grid Padding="16,12" ColumnSpacing="8" RowSpacing="8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ToggleButton x:Name="SidebarToggleButton" IsChecked="True" Checked="SidebarToggle_Changed" Unchecked="SidebarToggle_Changed"
+                          AutomationProperties.Name="Zobrazit nebo skrýt umístění" ToolTipService.ToolTip="Složky a diskové jednotky">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <controls:RepoIcon Data="{StaticResource RepoFolder}"/><TextBlock Text="Složky" VerticalAlignment="Center"/>
+                </StackPanel>
+            </ToggleButton>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <Button Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
+                        AutomationProperties.Name="Zpět" ToolTipService.ToolTip="Zpět (Alt+←)">
+                    <controls:RepoIcon Data="{StaticResource RepoBack}"/>
+                </Button>
+                <Button Command="{Binding GoForwardCommand}" IsEnabled="{Binding CanGoForward}"
+                        AutomationProperties.Name="Vpřed" ToolTipService.ToolTip="Vpřed (Alt+→)">
+                    <controls:RepoIcon Data="{StaticResource RepoBack}">
+                        <controls:RepoIcon.RenderTransform><ScaleTransform ScaleX="-1" CenterX="10"/></controls:RepoIcon.RenderTransform>
+                    </controls:RepoIcon>
+                </Button>
+                <Button Command="{Binding GoUpCommand}" IsEnabled="{Binding CanGoUp}"
+                        AutomationProperties.Name="Nadřazená složka" ToolTipService.ToolTip="O úroveň výš (Alt+↑)">
+                    <controls:RepoIcon Data="{StaticResource RepoUp}"/>
+                </Button>
+            </StackPanel>
+            <Button Grid.Column="2" Tag="{x:Bind HomePath}" Click="NavigationLocation_Click" IsEnabled="{Binding IsIdle}"
+                    AutomationProperties.Name="Domovská složka" ToolTipService.ToolTip="Otevřít domovskou složku">
+                <controls:RepoIcon Data="{StaticResource RepoHome}"/>
+            </Button>
+            <TextBox x:Name="AddressTextBox" Grid.Column="3"
+                     Text="{Binding AddressPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding IsIdle}" KeyDown="AddressTextBox_KeyDown"
+                     PlaceholderText="Zadejte cestu ke složce" AutomationProperties.Name="Adresa složky"
+                     ToolTipService.ToolTip="Cesta ke složce (Ctrl+L); podporuje i %USERPROFILE%"/>
+            <Button Grid.Column="4" Command="{Binding NavigateToAddressCommand}" IsEnabled="{Binding IsIdle}"
+                    AutomationProperties.Name="Přejít na adresu" ToolTipService.ToolTip="Přejít na adresu">
+                <controls:RepoIcon Data="{StaticResource RepoChevron}"/>
+            </Button>
+            <Button Grid.Column="5" Click="BrowseFolder_Click" IsEnabled="{Binding IsIdle}"
+                    AutomationProperties.Name="Vybrat složku" ToolTipService.ToolTip="Vybrat složku bez zadávání cesty">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <controls:RepoIcon Data="{StaticResource RepoFolder}"/><TextBlock Text="Vybrat složku…" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="6" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}"
+                    AutomationProperties.Name="Aktualizovat" ToolTipService.ToolTip="Aktualizovat (F5)">
+                <controls:RepoIcon Data="{StaticResource RepoRefresh}"/>
+            </Button>
+            <ScrollViewer Grid.Row="1" Grid.ColumnSpan="7" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="{Binding Name}" Tag="{Binding FullPath}" Click="NavigationLocation_Click"
+                                        IsEnabled="{Binding DataContext.IsIdle, ElementName=ExplorerRoot}"
+                                        Background="Transparent" BorderThickness="0" Padding="8,4" ToolTipService.ToolTip="{Binding FullPath}"/>
+                                <controls:RepoIcon Data="{StaticResource RepoChevron}" Width="12" Height="12" VerticalAlignment="Center" Opacity="0.45"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnSpacing="12" Padding="16,2,8,10">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Button x:Name="ConvertSelectedButton" Click="ConvertVideos_Click" IsEnabled="{Binding IsIdle}"
+                    AutomationProperties.Name="Převést vybraná videa"
+                    Style="{ThemeResource AccentButtonStyle}" VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Vybraná videa rovnou zařadit do fronty; bez výběru otevřít převody">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <controls:RepoIcon Data="{StaticResource RepoVideo}" Foreground="{Binding Foreground, ElementName=ConvertSelectedButton}"/>
+                    <TextBlock Text="Převést videa" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        <CommandBar Grid.Column="1" DefaultLabelPosition="Right" IsOpen="False" Background="Transparent"
+                    HorizontalContentAlignment="Left" IsEnabled="{Binding IsIdle}">
+            <AppBarButton Icon="Add" Label="Nová složka" Click="CreateFolderButton_Click"
+                          IsEnabled="{Binding CanCreate}" ToolTipService.ToolTip="Nová složka (Ctrl+Shift+N)"/>
+            <AppBarSeparator/>
+            <AppBarButton Icon="Cut" Label="Vyjmout" Command="{Binding CutToClipboardCommand}"
+                          IsEnabled="{Binding HasSelection}" ToolTipService.ToolTip="Interní schránka; přesun jen v rámci svazku (Ctrl+X)"/>
+            <AppBarButton Icon="Copy" Label="Kopírovat" Command="{Binding CopyToClipboardCommand}"
+                          IsEnabled="{Binding HasSelection}" ToolTipService.ToolTip="Kopírovat do schránky MediaForge (Ctrl+C)"/>
+            <AppBarButton Icon="Paste" Label="Vložit" Command="{Binding PasteClipboardCommand}"
+                          IsEnabled="{Binding CanPaste}" ToolTipService.ToolTip="Vložit ze schránky MediaForge (Ctrl+V)"/>
+            <AppBarSeparator/>
+            <AppBarButton Icon="Rename" Label="Přejmenovat" Click="RenameItemButton_Click"
+                          IsEnabled="{Binding HasSingleSelection}" ToolTipService.ToolTip="Přejmenovat (F2)"/>
+            <AppBarButton Icon="Delete" Label="Do Koše" Click="DeleteFilesButton_Click"
+                          IsEnabled="{Binding HasSelection}" ToolTipService.ToolTip="Přesunout do Koše (Delete)"/>
+            <CommandBar.SecondaryCommands>
+                <AppBarButton Icon="OpenFile" Label="Otevřít" Click="OpenItemButton_Click" IsEnabled="{Binding HasSingleSelection}"/>
+                <AppBarSeparator/>
+                <AppBarButton Icon="Folder" Label="Kopírovat do…" Click="CopyFilesButton_Click" IsEnabled="{Binding HasSelection}"/>
+                <AppBarButton Icon="MoveToFolder" Label="Přesunout do…" Click="MoveFilesButton_Click"
+                              IsEnabled="{Binding HasSelection}" ToolTipService.ToolTip="Pouze nativní přesun v rámci svazku"/>
+                <AppBarButton Icon="Accept" Label="Kopírovat a ověřit" Click="CopyAndVerifyButton_Click"
+                              IsEnabled="{Binding CanVerify}" ToolTipService.ToolTip="Zkopírovat jednu složku a ověřit SHA-256; zdroj se nemaže"/>
+                <AppBarSeparator/>
+                <AppBarButton Icon="Rename" Label="Chytře přejmenovat podle metadat…" Click="SmartRename_Click"
+                              IsEnabled="{Binding CanSmartRename}"/>
+                <AppBarButton Icon="Play" Label="Přehrát ve FFplay" Command="{Binding PreviewSelectedCommand}"
+                              IsEnabled="{Binding CanPreview}" ToolTipService.ToolTip="Náhled ve vlastním okně FFplay; vyžaduje doplněný balíček nástrojů"/>
+                <AppBarButton Icon="SelectAll" Label="Vybrat vše" Click="SelectAllButton_Click"/>
+                <AppBarButton Icon="ClearSelection" Label="Zrušit výběr" Click="ClearSelectionButton_Click"/>
+                <AppBarButton Icon="Page" Label="Vlastnosti" Click="PropertiesButton_Click" IsEnabled="{Binding HasSingleSelection}"/>
+                <AppBarSeparator/>
+                <AppBarButton Icon="Cancel" Label="Vyprázdnit interní schránku" Command="{Binding ClearClipboardCommand}" IsEnabled="{Binding HasClipboardItems}"/>
+            </CommandBar.SecondaryCommands>
+        </CommandBar>
+        </Grid>
+
+        <InfoBar Grid.Row="2" Margin="16,4,16,8" Severity="Error"
+                 IsOpen="{Binding HasError, Mode=TwoWay}" Title="Operace se nezdařila"
+                 Message="{Binding ErrorMessage}"/>
+
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="210"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Border x:Name="SidebarPane" BorderThickness="0,1,1,0"
+                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="8,14" Spacing="4">
+                        <TextBlock Text="RYCHLÝ PŘÍSTUP" FontSize="11" FontWeight="SemiBold" Opacity="0.6" Margin="12,0,0,8"/>
+                        <ItemsControl ItemsSource="{Binding QuickAccess}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource NavigationButtonStyle}"
+                                            Click="NavigationLocation_Click" Tag="{Binding FullPath}"
+                                            IsEnabled="{Binding DataContext.IsIdle, ElementName=ExplorerRoot}">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <controls:RepoIcon Data="{StaticResource RepoFolder}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="DISKOVÉ JEDNOTKY" FontSize="11" FontWeight="SemiBold" Opacity="0.6" Margin="12,22,0,8"/>
+                        <ItemsControl ItemsSource="{Binding Drives}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource NavigationButtonStyle}" Tag="{Binding FullPath}"
+                                            Click="NavigationLocation_Click"
+                                            IsEnabled="{Binding DataContext.IsIdle, ElementName=ExplorerRoot}">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <controls:RepoIcon Data="{StaticResource RepoDrive}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Column="1" Padding="16,12" RowSpacing="10"
+                  Background="{ThemeResource LayerFillColorDefaultBrush}"
+                  BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <controls:RepoIcon Data="{StaticResource RepoFolder}" Width="30" Height="30"
+                                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="{Binding FolderTitle}" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding ItemCountText}" FontSize="12" Opacity="0.6"/>
+                        </StackPanel>
+                    </Grid>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding ShowThumbnails, Mode=TwoWay}"
+                              IsEnabled="{Binding IsIdle}" VerticalAlignment="Center"
+                              ToolTipService.ToolTip="Obrazové karty; snímky postupně extrahuje FFmpeg na pozadí">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <controls:RepoIcon Data="{StaticResource RepoGrid}" Width="16" Height="16"/>
+                            <TextBlock Text="Miniatury" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </CheckBox>
+                    <ToggleButton Grid.Column="2" IsChecked="{Binding ShowDetails, Mode=TwoWay}"
+                                  VerticalAlignment="Center" AutomationProperties.Name="Panel podrobností"
+                                  ToolTipService.ToolTip="Zobrazit podrobnosti (v širokém okně)">
+                        <controls:RepoIcon Data="{StaticResource RepoSliders}"/>
+                    </ToggleButton>
+                </Grid>
+                <Grid Grid.Row="1" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <controls:RepoIcon Data="{StaticResource RepoSearch}" VerticalAlignment="Center" Opacity="0.65"/>
+                    <TextBox x:Name="SearchTextBox" Grid.Column="1" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding IsIdle}"
+                             PlaceholderText="Filtrovat názvy v této složce…" AutomationProperties.Name="Filtrovat soubory"
+                              ToolTipService.ToolTip="Filtruje pouze aktuální složku, ne podsložky (Ctrl+F)"/>
+                    </Grid>
+                    <ComboBox Grid.Column="1" SelectedIndex="{Binding SortIndex, Mode=TwoWay}" MinWidth="130"
+                              IsEnabled="{Binding IsIdle}"
+                              AutomationProperties.Name="Řadit podle">
+                        <ComboBoxItem Content="Název"/><ComboBoxItem Content="Datum změny"/>
+                        <ComboBoxItem Content="Typ"/><ComboBoxItem Content="Velikost"/>
+                    </ComboBox>
+                    <ToggleButton Grid.Column="2" IsChecked="{Binding SortDescending, Mode=TwoWay}"
+                                  IsEnabled="{Binding IsIdle}"
+                                  AutomationProperties.Name="Řadit sestupně" ToolTipService.ToolTip="Sestupné řazení">
+                        <FontIcon Glyph="&#xE74B;" FontSize="16"/>
+                    </ToggleButton>
+                </Grid>
+                <Expander Grid.Row="2" HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch" IsEnabled="{Binding IsIdle}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <controls:RepoIcon Data="{StaticResource RepoSliders}"/>
+                            <TextBlock Text="Další filtry videí" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Spacing="8">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                            <Grid MinWidth="520" ColumnSpacing="10" RowSpacing="8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <ComboBox Header="Stav analýzy" SelectedIndex="{Binding AnalysisFilterIndex, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="Všechna videa"/><ComboBoxItem Content="Analyzovaná"/><ComboBoxItem Content="Neanalyzovaná"/>
+                                </ComboBox>
+                                <TextBox Grid.Column="1" Header="Video kodek" PlaceholderText="např. hevc, h264"
+                                         Text="{Binding VideoCodecFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBox Grid.Column="2" Header="Kontejner" PlaceholderText="např. matroska, mov"
+                                         Text="{Binding ContainerFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <NumberBox Grid.Row="1" Header="Výška od (px)" Minimum="0" Maximum="100000"
+                                           Value="{Binding MinimumHeight, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <NumberBox Grid.Row="1" Grid.Column="1" Header="Výška do (px)" Minimum="0" Maximum="100000"
+                                           Value="{Binding MaximumHeight, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <ComboBox Grid.Row="1" Grid.Column="2" Header="Snímková frekvence" HorizontalAlignment="Stretch"
+                                          SelectedIndex="{Binding FrameRateFilterIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="Libovolné FPS"/><ComboBoxItem Content="Do 30 fps"/>
+                                    <ComboBoxItem Content="Nad 30 fps"/><ComboBoxItem Content="50 fps a více"/>
+                                </ComboBox>
+                                <NumberBox Grid.Row="2" Header="Délka od (min)" Minimum="0"
+                                           Value="{Binding MinimumDurationMinutes, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <NumberBox Grid.Row="2" Grid.Column="1" Header="Délka do (min)" Minimum="0"
+                                           Value="{Binding MaximumDurationMinutes, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <ComboBox Grid.Row="2" Grid.Column="2" Header="Zvuk" HorizontalAlignment="Stretch"
+                                          SelectedIndex="{Binding AudioFilterIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="Libovolný"/><ComboBoxItem Content="Se zvukem"/><ComboBoxItem Content="Bez zvuku"/>
+                                </ComboBox>
+                                <NumberBox Grid.Row="3" Header="Datový tok od (Mb/s)" Minimum="0"
+                                           Value="{Binding MinimumBitRateMbps, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <NumberBox Grid.Row="3" Grid.Column="1" Header="Datový tok do (Mb/s)" Minimum="0"
+                                           Value="{Binding MaximumBitRateMbps, Mode=TwoWay}" PlaceholderText="Bez omezení"/>
+                                <ComboBox Grid.Row="3" Grid.Column="2" Header="Titulky" HorizontalAlignment="Stretch"
+                                          SelectedIndex="{Binding SubtitleFilterIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="Libovolné"/><ComboBoxItem Content="S titulky"/><ComboBoxItem Content="Bez titulků"/>
+                                </ComboBox>
+                            </Grid>
+                        </ScrollViewer>
+                        <TextBlock Text="{Binding MetadataFilterHint}" TextWrapping="Wrap" FontSize="11" Opacity="0.7"/>
+                        <Button Content="Vymazat filtry údajů" Command="{Binding ResetMetadataFiltersCommand}"/>
+                    </StackPanel>
+                </Expander>
+                <Grid Grid.Row="3">
+                    <ScrollViewer x:Name="FilesScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <Grid x:Name="FilesListHost" MinWidth="620">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                            <Grid x:Name="FilesColumnHeaders" Padding="10,0,20,0" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/><ColumnDefinition Width="145"/>
+                                    <ColumnDefinition Width="95"/><ColumnDefinition Width="90"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Content="Název" Tag="0" Click="SortColumn_Click" Style="{StaticResource ColumnButtonStyle}"/>
+                                <Button Grid.Column="1" Content="Datum změny" Tag="1" Click="SortColumn_Click" Style="{StaticResource ColumnButtonStyle}"/>
+                                <Button Grid.Column="2" Content="Typ" Tag="2" Click="SortColumn_Click" Style="{StaticResource ColumnButtonStyle}"/>
+                                <Button Grid.Column="3" Content="Velikost" Tag="3" Click="SortColumn_Click" Style="{StaticResource ColumnButtonStyle}"/>
+                            </Grid>
+                            <ListView x:Name="FilesListView" Grid.Row="1" ItemsSource="{Binding Items}"
+                                      SelectionMode="Extended" SelectionChanged="FilesListView_SelectionChanged"
+                                      DoubleTapped="FilesListView_DoubleTapped" RightTapped="FilesListView_RightTapped"
+                                       IsEnabled="{Binding IsIdle}" HorizontalContentAlignment="Stretch"
+                                       ItemTemplate="{StaticResource FileRowTemplate}" ItemsPanel="{StaticResource FileRowsPanel}"
+                                      AutomationProperties.Name="Soubory a složky">
+                                <ListView.ContextFlyout>
+                                    <MenuFlyout Opening="FilesMenu_Opening">
+                                        <MenuFlyoutItem x:Name="MenuOpen" Text="Otevřít" Icon="OpenFile" Click="OpenItemButton_Click"/>
+                                        <MenuFlyoutItem x:Name="MenuPreview" Text="Přehrát ve FFplay" Icon="Play"
+                                                        Command="{Binding PreviewSelectedCommand}" IsEnabled="{Binding CanPreview}"/>
+                                        <MenuFlyoutSeparator/>
+                                        <MenuFlyoutItem x:Name="MenuCut" Text="Vyjmout" Icon="Cut" Command="{Binding CutToClipboardCommand}"/>
+                                        <MenuFlyoutItem x:Name="MenuCopy" Text="Kopírovat" Icon="Copy" Command="{Binding CopyToClipboardCommand}"/>
+                                        <MenuFlyoutItem x:Name="MenuPaste" Text="Vložit" Icon="Paste" Command="{Binding PasteClipboardCommand}"/>
+                                        <MenuFlyoutItem x:Name="MenuCopyTo" Text="Kopírovat do…" Click="CopyFilesButton_Click"/>
+                                        <MenuFlyoutItem x:Name="MenuMoveTo" Text="Přesunout do…" Click="MoveFilesButton_Click"/>
+                                        <MenuFlyoutItem x:Name="MenuVerify" Text="Kopírovat a ověřit SHA-256" Click="CopyAndVerifyButton_Click"/>
+                                        <MenuFlyoutSeparator/>
+                                        <MenuFlyoutItem x:Name="MenuRename" Text="Přejmenovat" Icon="Rename" Click="RenameItemButton_Click"/>
+                                        <MenuFlyoutItem x:Name="MenuDelete" Text="Přesunout do Koše" Icon="Delete" Click="DeleteFilesButton_Click"/>
+                                        <MenuFlyoutItem x:Name="MenuNewFolder" Text="Nová složka" Icon="Add" Click="CreateFolderButton_Click"/>
+                                        <MenuFlyoutItem Text="Aktualizovat" Icon="Refresh" Command="{Binding RefreshCommand}"/>
+                                        <MenuFlyoutSeparator/>
+                                        <MenuFlyoutItem x:Name="MenuProperties" Text="Vlastnosti" Icon="Page" Click="PropertiesButton_Click"/>
+                                    </MenuFlyout>
+                                </ListView.ContextFlyout>
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="MinHeight" Value="44"/>
+                                        <Setter Property="Padding" Value="4,0"/>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                            </ListView>
+                        </Grid>
+                    </ScrollViewer>
+                    <StackPanel Visibility="{Binding EmptyVisibility}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Spacing="12" IsHitTestVisible="False" MaxWidth="340">
+                        <SymbolIcon Symbol="Folder" Opacity="0.35"/>
+                        <TextBlock Text="{Binding EmptyTitle}" FontSize="18" FontWeight="SemiBold" TextAlignment="Center"/>
+                        <TextBlock Text="Zobrazují se pouze složky a podporované video soubory." Opacity="0.6" TextWrapping="Wrap" TextAlignment="Center"/>
+                    </StackPanel>
+                    <ProgressRing IsActive="{Binding IsLoading}" Width="36" Height="36" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+            </Grid>
+            <Border x:Name="DetailsPane" Grid.Column="2" Width="250" Visibility="{Binding DetailsVisibility}"
+                    Padding="20" BorderThickness="1,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+                <ScrollViewer>
+                    <StackPanel Spacing="20">
+                        <FontIcon Glyph="&#xE8A5;" FontSize="32" HorizontalAlignment="Left" Opacity="0.6"/>
+                        <TextBlock Text="{Binding DetailsTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding DetailsText}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Opacity="0.8"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="4" Visibility="{Binding OperationVisibility}" Margin="16,8" Padding="14"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding CopyStatus}" TextWrapping="Wrap"/>
+                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding CopyProgress}" IsIndeterminate="{Binding IsVerifying}" Height="4"/>
+                    <TextBlock Text="{Binding VerificationStatus}" FontSize="12" Opacity="0.7"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Zrušit" Command="{Binding CancelCopyCommand}"
+                        IsEnabled="{Binding IsCopying}" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="5" Padding="16,10" ColumnSpacing="16" BorderThickness="0,1,0,0"
+              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Spacing="3">
+                <TextBlock Text="{Binding StatusText}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding StatusText}"/>
+                <TextBlock Text="{Binding ClipboardStatus}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding AnalysisStatus}" FontSize="11" TextTrimming="CharacterEllipsis"
+                           ToolTipService.ToolTip="{Binding AnalysisStatus}"/>
+                <ProgressBar Visibility="{Binding AnalysisVisibility}" Height="3"
+                             Value="{Binding AnalysisProgress}" IsIndeterminate="{Binding AnalysisIndeterminate}"
+                             Minimum="0" Maximum="100"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="{Binding SelectionStatus}" FontSize="12" VerticalAlignment="Center"/>
+            <Button Grid.Column="2" Click="FfmpegStatus_Click" Background="Transparent" BorderThickness="0"
+                    VerticalAlignment="Center" Padding="8,4" ToolTipService.ToolTip="Stav FFmpeg, instalace a aktualizace">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xEA3A;" FontSize="10" Foreground="{x:Bind Ffmpeg.IndicatorBrush, Mode=OneWay}"/>
+                    <TextBlock Text="{x:Bind Ffmpeg.IndicatorText, Mode=OneWay}" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <CheckBox Grid.Column="3" Content="Skryté položky" IsChecked="{Binding ShowHidden, Mode=TwoWay}"
+                      IsEnabled="{Binding IsIdle}" VerticalAlignment="Center" FontSize="12"/>
+        </Grid>
+    </Grid>
+</Page>

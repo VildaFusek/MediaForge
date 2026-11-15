@@ -1,0 +1,37 @@
+name: Chyba
+description: Nahlásit chybu aplikace MediaForge.
+title: "[Chyba] "
+body:
+  - type: markdown
+    attributes:
+      value: "Nezveřejňujte soukromá média, celé databáze, přístupové údaje ani neupravené protokoly."
+  - type: input
+    id: version
+    attributes:
+      label: Verze MediaForge nebo commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows a architektura
+      placeholder: "Verze a sestavení Windows, x64"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Postup reprodukce
+      description: "Uveďte kroky, očekávaný výsledek a co se skutečně stalo."
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Nastavení médií a převodu
+      description: "Pokud relevantní: FFmpeg verze, kontejner, kodeky, HDR, profil, enkodér, GPU a ovladač. Bez soukromých cest."
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Anonymizovaný výřez protokolu nebo screenshot
+      description: "Před vložením odstraňte osobní údaje, citlivé názvy a úplné cesty."

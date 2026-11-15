@@ -1,0 +1,22 @@
+name: Návrh vylepšení
+description: Popsat potřebu nebo navrhnout změnu.
+title: "[Návrh] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaký problém potřebujete vyřešit?
+      description: "Popište konkrétní použití, ne pouze požadovaný ovládací prvek."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Navrhované řešení a alternativy
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Dopad na data a stávající chování
+      description: "Má návrh měnit originály, názvy, cílové soubory nebo chování při kolizi?"

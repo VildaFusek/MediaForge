@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="graphite" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#303640"/>
+      <stop offset="1" stop-color="#1C2027"/>
+    </linearGradient>
+    <linearGradient id="forge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FF9A24"/>
+      <stop offset="1" stop-color="#FF5A00"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#graphite)" stroke="#78818E" stroke-opacity=".55" stroke-width="1"
+        fill-rule="evenodd" d="M28 80Q28 72 36 72H70Q75 72 79 76L136 128L222 77Q232 71 232 84V204Q232 211 226 215L180 242Q168 249 168 236V156L138 181Q134 185 129 181L82 141V204Q82 211 76 215L39 239Q28 246 28 233Z
+        M44 96H56Q60 96 60 100V110Q60 114 56 114H44Q40 114 40 110V100Q40 96 44 96Z
+        M44 126H56Q60 126 60 130V140Q60 144 56 144H44Q40 144 40 140V130Q40 126 44 126Z
+        M44 156H56Q60 156 60 160V170Q60 174 56 174H44Q40 174 40 170V160Q40 156 44 156Z
+        M44 186H56Q60 186 60 190V200Q60 204 56 204H44Q40 204 40 200V190Q40 186 44 186Z"/>
+  <path fill="url(#forge)" d="M214 16Q219 42 242 47Q219 52 214 78Q209 52 186 47Q209 42 214 16Z
+        M132 121L188 67Q202 53 214 65Z
+        M96 168Q91 165 91 172V210Q91 217 97 213L124 195Q130 191 124 187Z"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"
+        d="M181 174V188M192 163V199M203 151V211M214 163V199M225 174V188"/>
+</svg>

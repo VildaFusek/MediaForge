@@ -1,0 +1,44 @@
+Feather icons by Cole Bemis, distributed through SVG Repo:
+https://www.svgrepo.com/collection/feather-icons/
+https://github.com/feathericons/feather
+
+Adaptations in Themes/RepoIcons.xaml: SVG paths, rectangles, circles and lines
+converted to native WinUI path data; colors follow the application theme.
+The forward arrow is a mirrored back arrow.
+
+SVG Repo sources:
+https://www.svgrepo.com/svg/349769/folder
+https://www.svgrepo.com/svg/349768/folder-plus
+https://www.svgrepo.com/svg/349923/video
+https://www.svgrepo.com/svg/349786/home
+https://www.svgrepo.com/svg/349783/hard-drive
+https://www.svgrepo.com/svg/349856/refresh-cw
+https://www.svgrepo.com/svg/349865/search
+https://www.svgrepo.com/svg/349844/play
+https://www.svgrepo.com/svg/349781/grid
+https://www.svgrepo.com/svg/349880/sliders
+https://www.svgrepo.com/svg/349673/arrow-left
+https://www.svgrepo.com/svg/349678/arrow-up
+https://www.svgrepo.com/svg/349704/chevron-right
+
+The MIT License (MIT)
+
+Copyright (c) 2013-2023 Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

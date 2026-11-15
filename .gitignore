@@ -1,0 +1,37 @@
+# Visual Studio a místní nastavení
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+**/Properties/PublishProfiles/*.pubxml.user
+
+# Výstupy distribuce
+artifacts/
+publish/
+TestResults/
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.appxsym
+*.appxupload
+
+# Soukromé runtime nástroje a diagnostika
+**/Tools/FFmpeg/
+*.log
+*.dmp
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Podpisové klíče a místní tajné konfigurace
+*.pfx
+*.p12
+.env
+.env.*
+!.env.example
